@@ -1,139 +1,101 @@
-
-/**
-The LocalStore singleton.
-
-@class TemplateStore
-@constructor
-**/
-LocalStore = {
-    /**
-    This object stores all keys and their values.
-
-    @property keys
-    @type Object
-    @default {}
-    @example
-
-        {
-            name->myProperty: "myValue",
-            ...
-        }
-
-    **/
+var self;
+self = LocalStore = {
     keys: {},
-
-
-    /**
-    Keeps the dependencies for the keys in the store.
-
-    @property deps
-    @type Object
-    @default {}
-    @example
-
-        {
-            name->myProperty: new Tracker.Dependency,
-            ...
-        }
-
-    **/
     deps: {},
+    _useChromeStorage: typeof chrome !== 'undefined' && chrome.storage,
 
-    // METHODS
-
-    // PRIVATE
     /**
-    Creates at least ones a `Tracker.Dependency` object to a key.
+     Creates at least ones a `Tracker.Dependency` object to a key.
 
-    @method _ensureDeps
-    @private
-    @param {String} key     the name of the key to add a dependecy tracker to
-    @return undefined
-    **/
+     @method _ensureDeps
+     @private
+     @param {String} key     the name of the key to add a dependecy tracker to
+     @return undefined
+     **/
     _ensureDeps: function (key) {
-        if (!this.deps[key]){
-            this.deps[key] = new Tracker.Dependency;
+        if (!self.deps[key]) {
+            self.deps[key] = new Tracker.Dependency();
         }
     },
-	set: function(key, value, options, callback){
 
-        this._ensureDeps(key);
+    set: function (key, value, options, callback) {
+        if (!callback && typeof options === 'function') {
+            callback = options;
+            options = {};
+        }
 
-		// USE CHROME STORAGE
-		if(typeof chrome !== 'undefined' && chrome.storage) {
-			var item = {};
-			item[key] = value;
+        self._ensureDeps(key);
 
-			// set
-			chrome.storage.local.set(item, function(){
+        function afterUpdate() {
+            // re-run reactive functions
+            if (!options || options.reactive !== false) {
+                self.deps[key].changed();
+            }
+            callback && callback();
+        }
 
-				// re-run reactive functions
-				if(!options || options.reactive !== false)
-	                this.deps[key].changed();
-
-	            // run callbacks
-				if(_.isFunction(callback))
-					callback();
-			});
-
-
-		// USE LOCALSTORAGE
-		} else {
-			// stringify
-			if(_.isObject(value))
-				value = EJSON.stringify(value);
-
-			// set
-            // use try to prevent warnings from low cache storages
-            try {
-    			localStorage.setItem(key, value);
-            } catch(e) {
-
+        if (self._useChromeStorage) {
+            var item = {};
+            item[key] = value;
+            if (value === undefined) {
+                chrome.storage.local.remove(item, afterUpdate);
+            } else {
+                chrome.storage.local.set(item, afterUpdate);
+            }
+        } else {
+            // stringify if necessary
+            if (_.isObject(value)) {
+                value = EJSON.stringify(value);
             }
 
-			// re-run reactive functions
-			if(!options || options.reactive !== false)
-                this.deps[key].changed();
+            if (value === undefined) {
+                localStorage.removeItem(key);
+            } else {
+                try {
+                    localStorage.setItem(key, value);
+                } catch (e) {
+                    console.log('WARNING: not able to store value for [' + key + ']:', e);
+                    throw e;
+                }
+            }
 
-			// run callbacks
-			if(_.isFunction(callback))
-				callback();
-		}
-	},
-	get: function(key, options, callback){
+            afterUpdate();
+        }
+    },
+    unset: function (key, options, callback) {
+        return self.set(key, undefined, options, callback);
+    },
+    get: function (key, options, callback) {
+        if (!callback && typeof options === 'function') {
+            callback = options;
+            options = {};
+        }
 
-        this._ensureDeps(key);
-
+        self._ensureDeps(key);
 
         // DEPEND REACTIVE FUNCTIONS
-		if(!options || options.reactive !== false)
-            this.deps[key].depend();
+        if (!options || options.reactive !== false) {
+            self.deps[key].depend();
+        }
 
+        if (self._useChromeStorage) {
+            chrome.storage.local.get(key, callback);
+        } else {
+            var value = localStorage.getItem(key);
 
-		// use chrome storage
-		if(typeof chrome !== 'undefined' && chrome.storage) {
-
-			// get
-			chrome.storage.local.get(key, callback);
-
-
-		// USE LOCALSTORAGE
-		} else {
-			// get
-			var value = localStorage.getItem(key),
-				retunValue = value;
-
-			// try to parse
-            if(value && _.isString(value)) {
-            	try {
-	                retunValue = EJSON.parse(value);
-            	} catch(error){
-            		retunValue = value;
-            	}
+            // try to parse
+            if (value && _.isString(value)) {
+                try {
+                    value = EJSON.parse(value);
+                } catch (e) {
+                    // ignore
+                }
             }
-
-            return retunValue;
-		}
-
-	}
-}
+            // schedule callback just as if this were an actual async operation
+            callback && Meteor.defer(function () {
+                callback(value);
+            });
+            return value;
+        }
+    }
+};
