@@ -1,6 +1,7 @@
 var self;
 self = LocalStore = {
     keys: {},
+    valueCache: {},
     deps: {},
     _useChromeStorage: typeof chrome !== 'undefined' && chrome.storage,
 
@@ -39,8 +40,10 @@ self = LocalStore = {
             item[key] = value;
             if (value === undefined) {
                 chrome.storage.local.remove(item, afterUpdate);
+                delete self.valueCache[key];
             } else {
                 chrome.storage.local.set(item, afterUpdate);
+                self.valueCache[key] = value;
             }
         } else {
             // stringify if necessary
@@ -79,7 +82,12 @@ self = LocalStore = {
         }
 
         if (self._useChromeStorage) {
-            chrome.storage.local.get(key, callback);
+            chrome.storage.local.get(key, function (value) {
+                self.valueCache[key] = value;
+                self.deps[key].changed();
+                callback(value);
+            });
+            return self.valueCache[key];
         } else {
             var value = localStorage.getItem(key);
 
