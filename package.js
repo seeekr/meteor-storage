@@ -1,6 +1,6 @@
 Package.describe({
     name: "seeekr:storage",
-    summary: "A reactive wrapper for localStorage, which will use chrome.storage if used in a chrome packaged app or extension",
+    summary: "Reactive wrapper for localStorage or chrome.storage, if used in chrome app/extension",
     version: "0.1.9",
     git: "https://github.com/seeekr/meteor-storage.git"
 });
